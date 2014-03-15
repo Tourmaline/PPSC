@@ -1,0 +1,25 @@
+/* Chunks & Tasks, version 1.0. A framework for parallelization of
+ *                              dynamic hierarchic algorithms.
+ * Copyright (C) Emanuel H. Rubensson <emanuelrubensson@gmail.com> and
+ *               Elias Rudberg <eliasrudberg@gmail.com>
+ * 
+ * Distribution without copyright owners' explicit consent prohibited.
+ * 
+ * This source code is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * 
+ * For further information about Chunks & Tasks, please contact the
+ * copyright owners.
+ */
+#include "Vector.h"
+#include "tasks_vector.h"
+
+#define VEC_REGISTER_CHUNK_TYPE(chunktype)					\
+  namespace chttl {							\
+    CHT_CHUNK_TYPE_SPECIALIZATION_IMPLEMENTATION(chunktype);		\
+  }
+#define VEC_REGISTER_TASK_TYPE(tasktype)					\
+  namespace chttl {							\
+    CHT_TASK_TYPE_SPECIALIZATION_IMPLEMENTATION(tasktype);		\
+  }

@@ -1,0 +1,48 @@
+CC=mpiCC
+NPROCS=1
+EXEC_PREFIX=mpirun -np $(NPROCS)
+BUILD_AS_SINGLE_PROGRAM=0
+BUILD_WITH_CUDA=0
+MPI_NODES=3
+
+ifeq ($(BUILD_WITH_CUDA),1)
+CFLAGS=-O3 -m64 -I/usr/local/cuda/include -DBUILD_WITH_CUDA=$(BUILD_WITH_CUDA)
+LDFLAGS=-L/usr/local/cuda/lib64 -lcudart -lcublas 
+else
+CFLAGS=-O3
+LDFLAGS= 
+endif
+
+BLASFLAGS=-I$(HOME)/glob/anask/OpenBLAS/include -L$(HOME)/glob/anask/OpenBLAS/lib  /gulo/glob/anask/OpenBLAS/lib/libopenblas.a
+
+CHTPATH=$(realpath $(TOPDIR)/../repos/chunks_and_tasks/source)
+CHTINCL=-I$(CHTPATH)
+CHTDIR=$(CHTPATH)
+
+CHTTLPATH=$(realpath $(TOPDIR)/../repos/cht_type_lib/source)
+CHTTLINCL=-I$(CHTTLPATH)
+CHTTLDIR=$(CHTTLPATH)
+
+CHTMLPATH=$(realpath $(TOPDIR)/../repos/cht_matrix_lib/source)
+CHTMLINCL=-I$(CHTMLPATH)
+CHTMLDIR=$(CHTMLPATH)
+
+BMLPATH=$(realpath $(TOPDIR)/../repos/basic_matrix_lib/source)
+BMLINCL=-I$(BMLPATH)
+BMLDIR=$(BMLPATH)
+
+BSMPATH=$(realpath $(TOPDIR)/../repos/block_sparse_matrix_lib/source)
+BSMINCL=-I$(BSMPATH)
+BSMDIR=$(BSMPATH)
+
+SMLPATH=$(realpath $(TOPDIR)/../repos/sparse_matrix_lib/source)
+SMLINCL=-I$(SMLPATH)
+SMLDIR=$(SMLPATH)
+
+CHTVECPATH=$(realpath $(TOPDIR)/VectorVector/Vector)
+CHTVECINCL=-I$(CHTVECPATH)
+CHTVECDIR=$(CHTVECPATH)
+
+
+LEAF_MAT_INCL=$(BMLINCL) $(BSMINCL) $(SMLINCL)	
+

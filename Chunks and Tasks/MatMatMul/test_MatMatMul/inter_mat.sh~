@@ -1,0 +1,35 @@
+#!/bin/bash -l
+
+#SBATCH -A p2011159 
+#SBATCH -p devel
+#SBATCH -n 1
+#SBATCH -t 30:00
+#SBATCH -J cat_mul
+
+module load gcc/4.8.2 openmpi/1.6.5
+
+#Usage: %s num_workers num_threads block_size MA NA NB
+
+mpirun -np 1 -bynode ./test_MatMatMul_manager 1 1 1000 1000 1000
+
+#N=6000
+#num_workers=2
+#for num_threads in {1..15}
+#do
+#    mpirun -np 1 -bynode ./test_MatMatMul_manager $num_workers $num_threads $N $N $N
+#done
+
+#echo "----------------------"
+
+#num_workers=1
+#num_threads=1
+#for N in {1000..10000..1000}
+#do
+#    mpirun -np 1 ./test_MatMatMul_manager $num_workers $num_threads  $N $N $N
+#done
+
+#mpirun -np 1 --mca mpi_leave_pinned 0 ./test_MatMatMul_manager $num_workers $num_threads  $N $N $N
+
+
+
+

@@ -1,0 +1,33 @@
+TOPDIR=../..
+COMMON=..
+BASICVECTOR=../BasicVector
+
+include $(TOPDIR)/Makefile.include
+
+MAKEDEPEND= $(CC) -M $(CFLAGS) $(CXXFLAGS) $(CPPFLAGS) $(CHTINCL) $(CHTVECINCL)  $(CHTTLINCL) -o $*.d $<
+SRCS = test_vector_update.cc BasicVector.cc registration.cc
+
+test_vector_update: test_vector_update_manager cht_worker
+	
+test_vector_update_manager: test_vector_update.o $(BASICVECTOR)/BasicVector.o $(COMMON)/registration.o $(CHTDIR)/libcht.a $(CHTTLDIR)/libchttl.a $(CHTVECDIR)/libchtvec.a
+	$(CC) $(CFLAGS) $(CHTINCL) $(CHTVECINCL)  $(CHTTLINCL) -o $@ $^ 
+
+cht_worker: $(CHTDIR)/libcht.a $(CHTTLDIR)/libchttl.a $(CHTVECDIR)/libchtvec.a
+ifeq ($(BUILD_AS_SINGLE_PROGRAM),0)
+	$(CC)  $(CFLAGS) $(CHTINCL) $(CHTVECINCL)  $(CHTTLINCL) -o $@ $^ 
+else
+	
+endif
+
+%.o: %.cc
+	@$(MAKEDEPEND)
+	$(CC) $(CFLAGS) $(CXXFLAGS) $(CPPFLAGS) $(CHTINCL) $(CHTVECINCL)  $(CHTTLINCL) -c $< -o $@
+
+-include $(SRCS:.cc=.d)
+
+check: test_vector_update 
+	$(EXEC_PREFIX) ./test_vector_update_manager
+	rm -f output.txt
+
+clean:
+	rm -f test_vector_update_manager cht_worker *.o *.d

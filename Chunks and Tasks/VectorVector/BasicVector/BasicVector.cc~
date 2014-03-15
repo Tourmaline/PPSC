@@ -1,0 +1,12 @@
+#include "BasicVector.h"
+
+template<typename T>
+void BasicVector<T>::update(BasicVector<T> const & x, BasicVector<T> const & y, chttl::Basic<T> const & alpha, BasicVector<T> & z)
+{
+  z.clear();
+  z.resize(x.size());
+  for (int ind = 0; ind < x.size();ind++)
+    z[ind] = x[ind] + alpha*y[ind];
+}
+
+

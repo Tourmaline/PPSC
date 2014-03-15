@@ -1,0 +1,53 @@
+#!/bin/bash -l
+
+#SBATCH -A p2011159 
+#SBATCH -p devel 
+#SBATCH -N 2
+#SBATCH -t 30:00
+#SBATCH -J cat_add
+
+module load gcc/4.8.2 openmpi/1.6.5
+
+echo "--------------  VECTOR ADD  ------------"
+ 
+PROG=1
+block_size=10000
+N=10000000
+
+num_workers=2
+for num_threads in {1..20}
+do
+    mpirun -np 1 -bynode ./time_vector_manager $num_workers $num_threads $N $block_size $PROG
+done
+
+
+#echo "----------------------"
+
+#size=(1000 527263 1053526 1579789 2106053 2632316 3158579 3684842 4211105 4737368 5263632 5789895 6316158 6842421 7368684 7894947 8421211 8947474)
+#num_threads=1
+#num_workers=16
+#for n in ${size[*]};
+#do
+#    mpirun -np 1 -bynode ./time_vector_manager $num_workers $num_threads $n $block_size $PROG
+#done
+
+
+
+echo "----------  DOT PRODUCT  ------------"
+
+PROG=2
+#block_size=10000
+#N=10000000
+#num_threads=1
+for num_threads in {1..20}
+do
+    mpirun -np 1 -bynode ./time_vector_manager $num_workers $num_threads $N $block_size $PROG
+done
+
+
+#size=(1000 527263 1053526 1579789 2106053 2632316 3158579 3684842 4211105 4737368 5263632 5789895 6316158 6842421 7368684 7894947 8421211 8947474 )  
+#num_threads=15
+#for n in ${size[*]};
+#do
+#     mpirun -np 1 ./time_vector_manager $num_workers $num_threads $n $block_size $PROG
+#done
