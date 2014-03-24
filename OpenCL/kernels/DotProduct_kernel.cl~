@@ -1,0 +1,54 @@
+#include "../../common/types_kernel.h"
+
+
+__kernel void DotProduct( __global real * x, __global real * y, __global real * results, __local real *local_res, __global int *params )
+{
+  
+  unsigned int itemIDglobal = get_global_id(0);
+  unsigned int itemIDlocal  = get_local_id(0);
+  unsigned int globalSize   = get_global_size(0);
+  unsigned int localSize    = get_local_size(0);
+  unsigned int groupID      = get_group_id(0);
+  
+  unsigned int i = itemIDglobal;
+  unsigned int add_size = globalSize;
+  unsigned int reductionSize;
+
+  unsigned int N = params[0];
+  unsigned int WAVEFRONT_SIZE = params[1];
+  
+  local_res[itemIDlocal] = 0;
+
+  while( i < N )
+    { 
+      local_res[itemIDlocal] += x[i]*y[i]; 
+      i += add_size;
+    }
+  
+  // parallel reduction inside a block
+  reductionSize = localSize >> 1;
+
+  barrier(CLK_LOCAL_MEM_FENCE);
+  
+    
+  //#pragma unroll
+  for( reductionSize; reductionSize > WAVEFRONT_SIZE; reductionSize >>= 1 )
+    if (itemIDlocal < reductionSize)
+      {
+	local_res[itemIDlocal] += local_res[itemIDlocal + reductionSize];
+	barrier(CLK_LOCAL_MEM_FENCE);
+      }
+
+
+
+  // continue reduction inside a warp without syncronization
+  #pragma unroll 6
+  for( reductionSize; reductionSize > 0; reductionSize >>= 1 )
+    if (itemIDlocal < reductionSize)
+      local_res[itemIDlocal] += local_res[itemIDlocal + reductionSize];
+  
+
+  // write result to global memory
+  if(itemIDlocal == 0)
+    results[groupID] = local_res[0];
+}

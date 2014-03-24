@@ -1,0 +1,316 @@
+#include "../../common/util.h"
+#include "../../matrix/MatrixParams.h"
+
+
+#define PROFILE 0
+//#define PRINT_INFO 0
+
+#define WORK_GROUP_SIZE 256
+
+
+int main(int argc, char** argv)
+{
+    cl_context       context      = 0;
+    cl_command_queue commandQueue = 0;
+    cl_program       program      = 0;
+    cl_device_id     device       = 0;
+    cl_kernel        kernel       = 0;
+    cl_int           status;
+   
+    int profiling_info = 0;
+    cl_event myEvent, myEvent2;
+
+    int ITEMS_PER_ROW;
+
+    if( argc < 3 || argc > 4 )
+      {
+	printf("Usage: %s matrix_file vector_file [ref_file]\n", argv[0]);
+	return EXIT_FAILURE;
+      }
+
+    int verify = (argc == 4 ? 1 : 0);
+
+    char Mfilename[50];
+    char xfilename[50];
+    char reffilename[50];
+
+
+
+    strcpy(Mfilename, argv[1]);
+    strcpy(xfilename, argv[2]);
+    if(verify)
+      strcpy(reffilename, argv[3]);
+
+
+#ifdef PROFILE
+    cl_ulong startTime, endTime, startTime2, endTime2;
+    cl_ulong kernelExecTimeNs, readFromGpuTime;
+    profiling_info = 1;
+#endif
+
+    char filename[]   = "../../kernels/MatVecMul_kernel.cl";
+    char filename2[] = "../../common/types_kernel.h";
+
+    /*  READING DATA FROM FILE  */
+
+    struct MatrixParams params;
+    real *Values;
+    int *RowPtr;
+    int *ColInd;
+    real *x;
+    real * res;
+    int N;
+
+
+    std::ifstream Mfile;
+    Mfile.open (Mfilename, std::ios::in);
+    if (!Mfile.is_open())
+      {
+	printf("Error: cannot open file\n");
+	return EXIT_FAILURE;
+      }
+
+    Mfile >> params.NRows;
+    Mfile >> params.NCols;
+    Mfile >> params.NNZ;
+    
+    HANDLE_ALLOC_ERROR(Values = (real*)malloc(params.NNZ*sizeof(real)));
+    HANDLE_ALLOC_ERROR(ColInd = (int*)malloc(params.NNZ*sizeof(int)));
+    HANDLE_ALLOC_ERROR(RowPtr = (int*)malloc((params.NRows+1)*sizeof(int)));
+    HANDLE_ALLOC_ERROR(x = (real*)malloc(params.NCols*sizeof(real)));
+    HANDLE_ALLOC_ERROR(res = (real*)malloc(params.NRows*sizeof(real)));
+
+    for( int i = 0; i < params.NRows+1; i++)
+      Mfile >> RowPtr[i];
+    for( int i = 0; i < params.NNZ; i++)
+      Mfile >> ColInd[i];
+    for( int i = 0; i < params.NNZ; i++)
+      Mfile >> Values[i];
+ 
+    Mfile.close();
+
+    std::ifstream xfile;
+    xfile.open (xfilename, std::ios::in);
+    if (!xfile.is_open())
+      {
+	printf("Error: cannot open file\n");
+	return EXIT_FAILURE;
+      }
+
+    xfile >> N;
+    assert(params.NRows == N);
+
+    for( int i = 0; i < params.NCols; i++)
+      xfile >> x[i];
+ 
+    xfile.close();
+
+
+
+
+    TIME start = tic();
+
+    TIME init = tic();
+
+    // Create an OpenCL context
+    context = CreateContext();
+    if(context == NULL)
+      {
+	std::cerr << "Failed to create OpenCL context." << std::endl;
+	Cleanup(context, commandQueue, program, kernel);
+	return EXIT_FAILURE;
+      }
+
+    // Create a command queue
+    commandQueue = CreateCommandQueue(context, &device, profiling_info);
+    if(commandQueue == NULL)
+      {
+	std::cerr << "Failed to create OpenCL command queue." << std::endl;
+	Cleanup(context, commandQueue, program, kernel);
+	return EXIT_FAILURE;
+      }
+
+    program = CreateProgram(context, device, filename, filename2);
+    if (program == NULL)
+      {
+	Cleanup(context, commandQueue, program, kernel);
+	return 1;
+      }
+    
+    // Create OpenCL kernel
+    kernel = clCreateKernel(program, "MatVecMul", NULL);
+    if(kernel == NULL)
+      {
+	std::cerr << "Failed to create kernel." << std::endl;
+	Cleanup(context, commandQueue, program, kernel);
+	return EXIT_FAILURE;
+      }
+    
+    printf("%lf\n", toc(init));
+
+    /*     QUERYING DEVICE INFO     */
+
+    size_t kernelWorkGroupSize; // maximum work-group size that can be used to execute a kernel
+    size_t sizeOfWarp;          // the preferred multiple of workgroup size for launch
+    cl_ulong localMemSize;      // the amount of local memory in bytes being used by a kernel
+    cl_ulong privateMemSize;    // the minimum amount of private memory, in bytes, used by each workitem in the kernel. 
+
+    HANDLE_OPENCL_ERROR(clGetKernelWorkGroupInfo(kernel, device, CL_KERNEL_WORK_GROUP_SIZE, sizeof(size_t), &kernelWorkGroupSize, NULL));
+    HANDLE_OPENCL_ERROR(clGetKernelWorkGroupInfo(kernel, device, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(size_t), &sizeOfWarp, NULL));
+#ifdef PRINT_INFO    
+    HANDLE_OPENCL_ERROR(clGetKernelWorkGroupInfo(kernel, device, CL_KERNEL_LOCAL_MEM_SIZE, sizeof(cl_ulong), &localMemSize, NULL));
+    HANDLE_OPENCL_ERROR(clGetKernelWorkGroupInfo(kernel, device, CL_KERNEL_PRIVATE_MEM_SIZE, sizeof(cl_ulong), &privateMemSize, NULL));
+#endif
+#ifdef PRINT_INFO 
+    printf("------------  Some info: --------------\n");
+    printf("kernelWorkGroupSize = %lu \n", kernelWorkGroupSize);
+    printf("sizeOfWarp          = %lu \n", sizeOfWarp);
+    printf("localMemSize        = %lu \n", localMemSize);
+    printf("privateMemSize      = %lu \n", privateMemSize);
+    printf("------------------------ --------------\n");
+#endif
+
+    if( WORK_GROUP_SIZE > kernelWorkGroupSize )
+      {
+	printf("Error: wrong work group size\n");
+	return EXIT_FAILURE;
+      }
+    ITEMS_PER_ROW = sizeOfWarp;
+
+    TIME t = tic();
+
+    int numWorkRows = params.NRows;    
+    size_t localWorkSize[1]  = {WORK_GROUP_SIZE};
+    int numWarpsInGroup = WORK_GROUP_SIZE/ITEMS_PER_ROW;
+    size_t globalWorkSize[1] = {((numWorkRows-1) / numWarpsInGroup + 1)*WORK_GROUP_SIZE};
+
+    cl_mem DEV_Values = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   sizeof(real)*params.NNZ, Values, &status);
+    HANDLE_OPENCL_ERROR(status);
+
+    cl_mem DEV_ColInd = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   sizeof(int)*params.NNZ, ColInd, &status);
+    HANDLE_OPENCL_ERROR(status);
+
+    cl_mem DEV_RowPtr = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+				       sizeof(int)*(params.NRows+1), RowPtr, &status);
+    HANDLE_OPENCL_ERROR(status);
+
+    cl_mem DEV_x = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   sizeof(real)*params.NCols, x, &status);
+    HANDLE_OPENCL_ERROR(status);
+
+
+    cl_mem DEV_res = clCreateBuffer(context, CL_MEM_WRITE_ONLY,
+                                   sizeof(real)*params.NRows, NULL, &status);
+    HANDLE_OPENCL_ERROR(status);
+
+    int p_dim = 2;
+    int p[] = {ITEMS_PER_ROW, params.NRows};
+
+    cl_mem DEV_p = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+				  sizeof(int)*p_dim, p, &status);
+    HANDLE_OPENCL_ERROR(status);
+
+    int n = 0;
+    status |= clSetKernelArg(kernel, n++, sizeof(cl_mem), (void*)&DEV_Values);
+    status |= clSetKernelArg(kernel, n++, sizeof(cl_mem), (void*)&DEV_ColInd);
+    status |= clSetKernelArg(kernel, n++, sizeof(cl_mem), (void*)&DEV_RowPtr);
+    status |= clSetKernelArg(kernel, n++, sizeof(cl_mem), (void*)&DEV_x);
+    status |= clSetKernelArg(kernel, n++, sizeof(cl_mem), (void*)&DEV_res);
+    status |= clSetKernelArg(kernel, n++, sizeof(cl_mem), (void*)&DEV_p);
+    status |= clSetKernelArg(kernel, n++, sizeof(real)*WORK_GROUP_SIZE, NULL);
+    HANDLE_OPENCL_ERROR(status);
+
+
+    printf("%lf\n", toc(t));
+
+    // Queue the kernel 
+    HANDLE_OPENCL_ERROR(clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL,
+					       globalWorkSize, localWorkSize,
+					       0, NULL, &myEvent));
+
+    // Read the output buffer back to the Host
+    HANDLE_OPENCL_ERROR(clEnqueueReadBuffer(commandQueue, DEV_res, CL_TRUE,
+					    0, params.NRows*sizeof(real), res,
+					    0, NULL, &myEvent2));
+    clFinish(commandQueue); // wait for all events to finish
+
+
+    double elapsed_time = toc(start);
+
+    /*  CHECK RESULTS   */
+    
+    if( verify )
+      {
+	std::ifstream reffile;
+	reffile.open (reffilename, std::ios::in);
+	if (!reffile.is_open())
+	  {
+	    printf("Error: cannot open file\n");
+	    return EXIT_FAILURE;
+	  }
+
+	int N_ref;
+	reffile >> N_ref;
+	assert(N == N_ref);
+
+	real *ref;
+	HANDLE_ALLOC_ERROR(ref = (real*)malloc(N*sizeof(real)));
+
+	for( int i = 0; i < N; i++)
+	  reffile >> ref[i];
+
+	reffile.close();
+
+
+	for( int i = 0; i < N; i++)
+	  {
+	    //std::cout << ref[i] << "=="  << res[i] << ",   ";
+	    assert(abs(ref[i] - res[i]) < TOL);
+	  }
+	
+	std::cout << "Verified..." << std::endl;
+
+      }
+
+
+
+
+#ifdef PROFILE
+    clGetEventProfilingInfo(myEvent, CL_PROFILING_COMMAND_START, 
+			    sizeof(cl_ulong), &startTime, NULL);
+    clGetEventProfilingInfo(myEvent, CL_PROFILING_COMMAND_END,
+			    sizeof(cl_ulong), &endTime, NULL);
+
+    clGetEventProfilingInfo(myEvent2, CL_PROFILING_COMMAND_START,
+                            sizeof(cl_ulong), &startTime2, NULL);
+    clGetEventProfilingInfo(myEvent2, CL_PROFILING_COMMAND_END,
+                            sizeof(cl_ulong), &endTime2, NULL);
+
+    kernelExecTimeNs = endTime-startTime;
+    readFromGpuTime = endTime2-startTime2;
+    printf(/*"Kernel execution time: %lf\n"*/"%lf\n", (double)readFromGpuTime/1000000000.0);
+    printf(/*"Kernel execution time: %lf\n"*/"%lf\n", (double)kernelExecTimeNs/1000000000.0);
+#endif
+printf(/*"Total execution time: %lf\n"*/"%lf\n", elapsed_time);
+
+
+    Cleanup(context, commandQueue, program, kernel);
+    free(Values);
+    free(RowPtr);
+    free(ColInd);
+    free(x);
+    free(res);
+
+    clReleaseMemObject(DEV_Values); 
+    clReleaseMemObject(DEV_ColInd);
+    clReleaseMemObject(DEV_RowPtr);
+    clReleaseMemObject(DEV_x);
+    clReleaseMemObject(DEV_res);
+    clReleaseMemObject(DEV_p);
+
+
+    return EXIT_SUCCESS;
+}
+

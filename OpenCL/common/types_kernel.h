@@ -1,0 +1,16 @@
+// types for kernel
+// for host use types.h
+
+#ifndef TYPES_KERNEL_HEADER
+#define TYPES_KERNEL_HEADER
+
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+#pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics : enable
+#pragma OPENCL EXTENSION cl_nv_pragma_unroll : enable
+
+typedef double real;
+typedef double4 real4;
+
+
+
+#endif
